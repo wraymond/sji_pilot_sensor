@@ -1,0 +1,219 @@
+---
+title: "data_mgmt"
+author: "Wendel Raymond"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+## Library ##
+library(tidyverse)
+```
+
+
+## SJI pilot eelgrass sensor deployment data managment
+Import raw data and prepare for plotting and analysis.
+
+### Data
+Including sensor deployment metadata and sensor data files themselves.
+```{r}
+## Deployments metadata ##
+deploy <- read.csv("sensor_deployments.csv", header  = TRUE, stringsAsFactors = FALSE)
+
+## PAR Calibration coefficients ##
+par.coefs <- read.csv('Calibration_2019_12.csv') %>%
+  select(sensor, medium, estimate) %>%
+  filter(medium == "water") %>% 
+  mutate(sensor_sn = as.character(sensor))
+
+## Sensor data ##
+ImportAll.cvs <- function(directory) {
+  # Get a list of all .csv files in the specified directory
+  csv_files <- list.files(path = directory, pattern = "\\.csv$", full.names = TRUE)
+  
+  # Initialize an empty list to store the data frames
+  data_frames <- list()
+  
+  # Loop through each .csv file and read it into a data frame
+  for (file in csv_files) {
+    data <- read.csv(file, header = FALSE)
+    data_frames[[basename(file)]] <- data
+  }
+  
+  # Return a list of data frames
+  return(data_frames)
+}
+
+sensors.raw <- ImportAll.cvs("data/")
+data.names <- names(sensors.raw)
+```
+
+### Deployment metadata
+Inspect deployments data to extract identifying information.
+```{r}
+deploy.sji <- deploy %>% 
+  filter(site == "SJI") %>% 
+  filter(launch.date == "5/23/2023")
+```
+
+### By sensor type data management
+For each sensor type, select the appropriate data files and clean up format to long with rows and observations and columns as timestamp and values.
+
+#### Temperature
+From dedicated temperature sensor only
+
+```{r}
+## Select temperature metadata ##
+temp.sns <- deploy.sji %>% 
+  filter(type == "temp") %>% 
+  select(sensor, site, subsite)
+
+temp.sns.vc <- temp.sns$sensor
+
+## Loop over sensors to create master temperature dataframe ##
+temp.dat <- data.frame()
+
+for(i in 1:length(temp.sns.vc)){
+  dat.name <- paste("SJI", temp.sns[i, 3], "2023_02", temp.sns[i, 1], sep = "_")
+  dat.name <- paste(dat.name, "csv", sep = ".")
+  dat <- sensors.raw[[dat.name]]
+  dat.new <- data.frame(site = substr(dat.name, start = 1, stop = 5),
+                       sensor_sn = substr(dat.name, start = 15, stop = 22),
+                       time = dat[5:nrow(dat), 2],
+                       temp_c = dat[5:nrow(dat), 3])
+  
+  temp.dat <- rbind(temp.dat, dat.new)
+}
+
+temp.dat <- temp.dat %>% 
+  mutate(time = as.POSIXct(time, format = "%m/%d/%Y %H:%M:%S")) %>% 
+  mutate(temp_c = as.numeric(temp_c))
+```
+
+#### Conductivity
+This sensor records high and low conductivity and temperature. 
+
+```{r}
+## Select conductivity metadata ##
+cond.sns <- deploy.sji %>% 
+  filter(type == "salinity") %>% 
+  select(sensor, site, subsite)
+
+cond.sns.vc <- cond.sns$sensor
+
+## Loop over sensors to create master conductivity dataframe ##
+cond.dat <- data.frame()
+
+for(i in 1:length(cond.sns.vc)){
+  dat.name <- paste("SJI", cond.sns[i, 3], "2023_02", cond.sns[i, 1], sep = "_")
+  dat.name <- paste(dat.name, "csv", sep = ".")
+  dat <- sensors.raw[[dat.name]]
+  dat.new <- data.frame(site = substr(dat.name, start = 1, stop = 5),
+                       sensor_sn = substr(dat.name, start = 15, stop = 22),
+                       time = dat[3:nrow(dat), 2],
+                       lo_cond_mS = dat[3:nrow(dat), 3],
+                       hi_cond_mS = dat[3:nrow(dat), 4],
+                       temp_c = dat[3:nrow(dat), 5])
+  
+  cond.dat <- rbind(cond.dat, dat.new)
+}
+
+cond.dat <- cond.dat %>% 
+  mutate(time = strptime(time, format = "%m/%d/%y %I:%M:%S %p")) %>% 
+  mutate(time = as.POSIXct(time, format = "%Y-%m-%d %H:%M:%S")) %>%  
+  mutate(lo_cond_mS = as.numeric(lo_cond_mS)) %>%
+  mutate(hi_cond_mS = as.numeric(hi_cond_mS)) %>%
+  mutate(temp_c = as.numeric(temp_c))
+```
+
+#### PAR
+Note these data are not (un-) calibrated. Calibration should occur elsewhere.
+
+```{r}
+## Select PAR metadata ##
+par.sns <- deploy.sji %>% 
+  filter(type == "par") %>% 
+  select(sensor, site, subsite)
+
+par.sns.vc <- par.sns$sensor
+
+## Loop over sensors to create master par dataframe ##
+par.dat <- data.frame()
+
+for(i in 1:length(par.sns.vc)){
+  dat.name <- paste("SJI", par.sns[i, 3], "2023_02", par.sns[i, 1], sep = "_")
+  dat.name <- paste(dat.name, "csv", sep = ".")
+  dat <- sensors.raw[[dat.name]]
+  dat.new <- data.frame(site = substr(dat.name, start = 1, stop = 5),
+                       sensor_sn = substr(dat.name, start = 15, stop = 18),
+                       time = paste(dat[7:nrow(dat), 2], dat[7:nrow(dat), 3], sep = " "),
+                       par_uncal = dat[7:nrow(dat), 4])
+  
+  par.dat <- rbind(par.dat, dat.new)
+}
+
+par.dat <- par.dat %>% 
+  mutate(time = as.POSIXct(time, format = "%d/%m/%Y %H:%M:%S")) %>% 
+  mutate(par_uncal = as.numeric(par_uncal))
+```
+
+#### Depth
+Note these data are not direct readings of depth, rather measures of absolute pressure in kPa. These data will need to be calibrated. Also, these sensor also report temperature.
+```{r}
+## Select depth metadata ##
+depth.sns <- deploy.sji %>% 
+  filter(type == "depth") %>% 
+  select(sensor, site, subsite)
+
+depth.sns.vc <- par.sns$sensor
+
+## Loop over sensors to create master depth dataframe ##
+depth.dat <- data.frame()
+
+for(i in 1:length(depth.sns.vc)){
+  dat.name <- paste("SJI", depth.sns[i, 3], "2023_02", depth.sns[i, 1], sep = "_")
+  dat.name <- paste(dat.name, "csv", sep = ".")
+  dat <- sensors.raw[[dat.name]]
+  dat.new <- data.frame(site = substr(dat.name, start = 1, stop = 5),
+                       sensor_sn = substr(dat.name, start = 15, stop = 22),
+                       time = dat[3:nrow(dat), 2],
+                       abs_pres_kPa = dat[3:nrow(dat), 3],
+                       temp_c = dat[3:nrow(dat), 4])
+  
+  depth.dat <- rbind(depth.dat, dat.new)
+}
+
+depth.dat <- depth.dat %>% 
+  mutate(time = strptime(time, format = "%m/%d/%y %I:%M:%S %p")) %>% 
+  mutate(time = as.POSIXct(time, format = "%Y-%m-%d %H:%M:%S")) %>% 
+  mutate(abs_pres_kPa = as.numeric(abs_pres_kPa)) %>% 
+  mutate(temp_c = as.numeric(temp_c))
+```
+
+### Calibration and correction
+Calibrate and correct data as needed. 
+
+#### PAR
+Use calibration coefficients to correct raw data
+```{r}
+par.dat <- left_join(par.dat, par.coefs[, 3:4], by = "sensor_sn") %>%
+  mutate(estimate = if_else(is.na(estimate), 1, estimate), # If a sensor has no calibration event, use 1 as coefficient
+         calib = par_uncal * estimate,
+         par_cal = par_uncal * estimate * 900 *0.000001)
+```
+
+#### Depth
+
+#### Conductivity
+
+### Exploratory plots
+
+#### Temperature
+```{r}
+ggplot(temp.dat) + 
+  geom_point(aes(x = time, y = temp_c)) + 
+  facet_wrap(~site)
+```
+
