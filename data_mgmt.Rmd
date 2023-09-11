@@ -113,9 +113,11 @@ for(i in 1:length(cond.sns.vc)){
   dat.new <- data.frame(site = substr(dat.name, start = 1, stop = 5),
                        sensor_sn = substr(dat.name, start = 15, stop = 22),
                        time = dat[3:nrow(dat), 2],
-                       lo_cond_mS = dat[3:nrow(dat), 3],
-                       hi_cond_mS = dat[3:nrow(dat), 4],
-                       temp_c = dat[3:nrow(dat), 5])
+                       spc_cond_uScm = dat[3:nrow(dat), 6],
+                       sal_ppt = dat[3:nrow(dat), 7],
+                       temp_c = dat[3:nrow(dat), 5],
+                       lo_cond_uScm = dat[3:nrow(dat), 3],
+                       hi_cond_uScm = dat[3:nrow(dat), 4])
   
   cond.dat <- rbind(cond.dat, dat.new)
 }
@@ -123,9 +125,11 @@ for(i in 1:length(cond.sns.vc)){
 cond.dat <- cond.dat %>% 
   mutate(time = strptime(time, format = "%m/%d/%y %I:%M:%S %p")) %>% 
   mutate(time = as.POSIXct(time, format = "%Y-%m-%d %H:%M:%S")) %>%  
-  mutate(lo_cond_mS = as.numeric(lo_cond_mS)) %>%
-  mutate(hi_cond_mS = as.numeric(hi_cond_mS)) %>%
-  mutate(temp_c = as.numeric(temp_c))
+  mutate(spc_cond_uScm = as.numeric(spc_cond_uScm)) %>%
+  mutate(sal_ppt = as.numeric(sal_ppt)) %>%
+  mutate(temp_c = as.numeric(temp_c)) %>% 
+  mutate(lo_cond_uScm = as.numeric(lo_cond_uScm)) %>% 
+  mutate(hi_cond_uScm = as.numeric(hi_cond_uScm))
 ```
 
 #### PAR
@@ -210,10 +214,60 @@ par.dat <- left_join(par.dat, par.coefs[, 3:4], by = "sensor_sn") %>%
 
 ### Exploratory plots
 
+#### Add some metadata
+Site names
+
+```{r}
+## Temperature ##
+temp.dat <- temp.dat %>%
+  mutate(site.name = case_when(
+         site == "SJI_1" ~ "Orcas E",
+         site == "SJI_2" ~ "Orcas W",
+         site == "SJI_3" ~ "Picnic Cove",
+         site == "SJI_4" ~ "Reef Net Bay",
+         site == "SJI_5" ~ "Jackson Beach",
+         site == "SJI_6" ~ "4th of July",
+         site == "SJI_7" ~ "Westcott Bay",
+         site == "SJI_8" ~"Mitchell Bay")
+         )
+
+temp.dat$site.name <- factor(temp.dat$site.name, levels = c("Orcas E", "Orcas W",
+                                                            "Mitchell Bay", "Westcott Bay",
+                                                            "Reef Net Bay", "Picnic Cove",
+                                                            "4th of July", "Jackson Beach"))
+
+## Salinity ##
+cond.dat <- cond.dat %>%
+  mutate(site.name = case_when(
+         site == "SJI_1" ~ "Orcas E",
+         site == "SJI_2" ~ "Orcas W",
+         site == "SJI_3" ~ "Picnic Cove",
+         site == "SJI_4" ~ "Reef Net Bay",
+         site == "SJI_5" ~ "Jackson Beach",
+         site == "SJI_6" ~ "4th of July",
+         site == "SJI_7" ~ "Westcott Bay",
+         site == "SJI_8" ~"Mitchell Bay")
+         )
+
+cond.dat$site.name <- factor(cond.dat$site.name, levels = c("Orcas E", "Orcas W",
+                                                            "Mitchell Bay", "Westcott Bay",
+                                                            "Reef Net Bay", "Picnic Cove",
+                                                            "4th of July", "Jackson Beach"))
+```
+
+
 #### Temperature
 ```{r}
 ggplot(temp.dat) + 
   geom_point(aes(x = time, y = temp_c)) + 
-  facet_wrap(~site)
+  facet_wrap(~site.name, ncol = 2, nrow = 4)
+```
+
+#### Conductivity and Salinity
+
+```{r}
+ggplot(cond.dat) + 
+  geom_point(aes(x = time, y = sal_ppt)) + 
+  facet_wrap(~site.name, ncol = 2, nrow = 4)
 ```
 
