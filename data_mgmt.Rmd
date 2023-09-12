@@ -10,6 +10,8 @@ editor_options:
 ```{r}
 ## Library ##
 library(tidyverse)
+
+theme_set(theme_classic())
 ```
 
 
@@ -199,6 +201,11 @@ depth.dat <- depth.dat %>%
 ### Calibration and correction
 Calibrate and correct data as needed. 
 
+1. PAR correction?
+2. Correct values for depth across sites. Esp. PAR. How does that work?
+3. Fine tune date trimming
+4. Derived values. Daily mean, median, hi/low, range, anomaly?
+
 #### PAR
 Use calibration coefficients to correct raw data
 ```{r}
@@ -208,15 +215,55 @@ par.dat <- left_join(par.dat, par.coefs[, 3:4], by = "sensor_sn") %>%
          par_cal = par_uncal * estimate * 900 *0.000001)
 ```
 
-#### Depth
+Correct for depth of the sensor
+```{r}
 
-#### Conductivity
+```
 
-### Exploratory plots
 
-#### Add some metadata
+### Clean up data
+
+#### Trim to deployment date range
+```{r}
+## Deployment times ##
+deploy.time <- deploy.sji %>% 
+  select(c(type, site, subsite, sensor, launch.date, launch.time, deploy.date, deploy.time, retrieve.date, retrieve.time)) %>% 
+  mutate(launch = paste(launch.date, launch.time, sep = " "),
+         deploy = paste(deploy.date, deploy.time, sep = " "),
+         retrieve = paste(retrieve.date, retrieve.time, sep = " ")) %>% 
+  mutate(launch = as.POSIXct(launch, format = "%m/%d/%Y %H:%M:%S"),
+         deploy = as.POSIXct(deploy, format = "%m/%d/%Y %H:%M:%S"),
+         retrieve = as.POSIXct(retrieve, format = "%m/%d/%Y %H:%M:%S"))
+
+## Trim ##
+# Temperature #
+temp.dat <- temp.dat %>% 
+  inner_join(deploy.time[, c(4, 11:13)], by = c("sensor_sn" = "sensor")) %>% 
+  filter(time >= deploy, time <= retrieve) %>% 
+  select(c(site, sensor_sn, time, temp_c))
+
+# Conductivity #
+cond.dat <- cond.dat %>% 
+  inner_join(deploy.time[, c(4, 11:13)], by = c("sensor_sn" = "sensor")) %>% 
+  filter(time >= deploy, time <= retrieve) %>% 
+  select(c(site, sensor_sn, time, spc_cond_uScm, sal_ppt, temp_c, lo_cond_uScm, hi_cond_uScm))
+
+# PAR #
+par.dat <- par.dat %>% 
+  inner_join(deploy.time[, c(4, 11:13)], by = c("sensor_sn" = "sensor")) %>% 
+  filter(time >= deploy, time <= retrieve) %>% 
+  select(c(site, sensor_sn, time, par_uncal, estimate, calib, par_cal))
+
+# Depth #
+depth.dat <- depth.dat %>% 
+  inner_join(deploy.time[, c(4, 11:13)], by = c("sensor_sn" = "sensor")) %>% 
+  filter(time >= deploy, time <= retrieve) %>% 
+  select(c(site, sensor_sn, time, abs_pres_kPa, temp_c))
+```
+
+
+#### Metadata
 Site names
-
 ```{r}
 ## Temperature ##
 temp.dat <- temp.dat %>%
@@ -236,7 +283,7 @@ temp.dat$site.name <- factor(temp.dat$site.name, levels = c("Orcas E", "Orcas W"
                                                             "Reef Net Bay", "Picnic Cove",
                                                             "4th of July", "Jackson Beach"))
 
-## Salinity ##
+## Conductivity ##
 cond.dat <- cond.dat %>%
   mutate(site.name = case_when(
          site == "SJI_1" ~ "Orcas E",
@@ -253,9 +300,27 @@ cond.dat$site.name <- factor(cond.dat$site.name, levels = c("Orcas E", "Orcas W"
                                                             "Mitchell Bay", "Westcott Bay",
                                                             "Reef Net Bay", "Picnic Cove",
                                                             "4th of July", "Jackson Beach"))
+
+## PAR ##
+par.dat <- par.dat %>% 
+  mutate(site.name = case_when(
+         site == "SJI_1" ~ "Orcas E",
+         site == "SJI_2" ~ "Orcas W",
+         site == "SJI_3" ~ "Picnic Cove",
+         site == "SJI_4" ~ "Reef Net Bay",
+         site == "SJI_5" ~ "Jackson Beach",
+         site == "SJI_6" ~ "4th of July",
+         site == "SJI_7" ~ "Westcott Bay",
+         site == "SJI_8" ~"Mitchell Bay")
+         )
+
+par.dat$site.name <- factor(par.dat$site.name, levels = c("Orcas E", "Orcas W",
+                                                            "Mitchell Bay", "Westcott Bay",
+                                                            "Reef Net Bay", "Picnic Cove",
+                                                            "4th of July", "Jackson Beach"))
 ```
 
-
+### Exploratory plots
 #### Temperature
 ```{r}
 ggplot(temp.dat) + 
@@ -266,8 +331,31 @@ ggplot(temp.dat) +
 #### Conductivity and Salinity
 
 ```{r}
+## Salinity ##
 ggplot(cond.dat) + 
   geom_point(aes(x = time, y = sal_ppt)) + 
+  facet_wrap(~site.name, ncol = 2, nrow = 4)
+
+## Spec Cond vs. temp ##
+ggplot(cond.dat) +
+  geom_point(aes(x = sal_ppt, y = temp_c)) +
+  facet_wrap(~site.name, ncol = 2, nrow = 4)
+
+ggplot(cond.dat %>% 
+         filter(site.name == "Jackson Beach") %>% 
+         filter(time >= as.POSIXct("2023-05-25 00:00:00"), time <= as.POSIXct("2023-08-30 00:00:00"))) +
+  geom_point(aes(x = sal_ppt, y = temp_c))
+
+ggplot(cond.dat %>% 
+         filter(site.name == "Jackson Beach") %>% 
+         filter(time >= as.POSIXct("2023-05-25 00:00:00"), time <= as.POSIXct("2023-08-30 00:00:00"))) +
+  geom_point(aes(x = time, y = sal_ppt))
+```
+
+#### PAR
+```{r}
+ggplot(par.dat) + 
+  geom_point(aes(x = time, y = par_cal)) + 
   facet_wrap(~site.name, ncol = 2, nrow = 4)
 ```
 
