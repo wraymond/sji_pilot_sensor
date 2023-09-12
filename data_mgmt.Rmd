@@ -205,6 +205,7 @@ Calibrate and correct data as needed.
 2. Correct values for depth across sites. Esp. PAR. How does that work?
 3. Fine tune date trimming
 4. Derived values. Daily mean, median, hi/low, range, anomaly?
+5. Correct for percentage drift on conductivity
 
 #### PAR
 Use calibration coefficients to correct raw data
@@ -347,7 +348,7 @@ ggplot(cond.dat %>%
   geom_point(aes(x = sal_ppt, y = temp_c))
 
 ggplot(cond.dat %>% 
-         filter(site.name == "Jackson Beach") %>% 
+         filter(site.name == "4th of July") %>% 
          filter(time >= as.POSIXct("2023-05-25 00:00:00"), time <= as.POSIXct("2023-08-30 00:00:00"))) +
   geom_point(aes(x = time, y = sal_ppt))
 ```
