@@ -63,6 +63,14 @@ deploy.sji <- deploy %>%
 ### By sensor type data management
 For each sensor type, select the appropriate data files and clean up format to long with rows and observations and columns as timestamp and values.
 
+```{r}
+site.names <- data.frame(
+  site = c("SJI_1", "SJI_2", "SJI_3", "SJI_4", "SJI_5", "SJI_6", "SJI_7", "SJI_8"),
+  site_name = c("Ocras East", "Orcas West", "Picnic Cove", "Reef Net Bay", "Jackson Beach", "4th of July", "Westcott Bay", "Mitchell Bay")
+)
+```
+
+
 #### Temperature
 From dedicated temperature sensor only
 
@@ -92,6 +100,8 @@ for(i in 1:length(temp.sns.vc)){
 temp.dat <- temp.dat %>% 
   mutate(time = as.POSIXct(time, format = "%m/%d/%Y %H:%M:%S")) %>% 
   mutate(temp_c = as.numeric(temp_c))
+
+temp.dat <- left_join(temp.dat, site.names)
 ```
 
 #### Conductivity
@@ -109,7 +119,7 @@ cond.sns.vc <- cond.sns$sensor
 cond.dat <- data.frame()
 
 for(i in 1:length(cond.sns.vc)){
-  dat.name <- paste("SJI", cond.sns[i, 3], "2023_02", cond.sns[i, 1], sep = "_")
+  dat.name <- paste("SJI", cond.sns[i, 3], "2023_02", cond.sns[i, 1], "corr", sep = "_")
   dat.name <- paste(dat.name, "csv", sep = ".")
   dat <- sensors.raw[[dat.name]]
   dat.new <- data.frame(site = substr(dat.name, start = 1, stop = 5),
@@ -132,6 +142,8 @@ cond.dat <- cond.dat %>%
   mutate(temp_c = as.numeric(temp_c)) %>% 
   mutate(lo_cond_uScm = as.numeric(lo_cond_uScm)) %>% 
   mutate(hi_cond_uScm = as.numeric(hi_cond_uScm))
+
+cond.dat <- left_join(cond.dat, site.names)
 ```
 
 #### PAR
@@ -163,6 +175,8 @@ for(i in 1:length(par.sns.vc)){
 par.dat <- par.dat %>% 
   mutate(time = as.POSIXct(time, format = "%d/%m/%Y %H:%M:%S")) %>% 
   mutate(par_uncal = as.numeric(par_uncal))
+
+par.dat <- left_join(par.dat, site.names)
 ```
 
 #### Depth
@@ -213,10 +227,10 @@ Use calibration coefficients to correct raw data
 par.dat <- left_join(par.dat, par.coefs[, 3:4], by = "sensor_sn") %>%
   mutate(estimate = if_else(is.na(estimate), 1, estimate), # If a sensor has no calibration event, use 1 as coefficient
          calib = par_uncal * estimate,
-         par_cal = par_uncal * estimate * 900 *0.000001)
+         par_cal = par_uncal * estimate * 900 * 0.000001)
 ```
 
-Correct for depth of the sensor
+Correct for depth of the sensor. 
 ```{r}
 
 ```
@@ -327,7 +341,7 @@ par.dat$site.name <- factor(par.dat$site.name, levels = c("Orcas E", "Orcas W",
 ggplot(temp.dat %>% 
          filter(time >= as.POSIXct("2023-05-25 00:00:00"), time <= as.POSIXct("2023-08-27 00:00:00"))) + 
   geom_point(aes(x = time, y = temp_c)) + 
-  facet_wrap(~site.name, ncol = 2, nrow = 4)
+  facet_wrap(~site, ncol = 2, nrow = 4)
 ```
 
 #### Conductivity and Salinity
@@ -359,5 +373,102 @@ ggplot(cond.dat %>%
 ggplot(par.dat) + 
   geom_point(aes(x = time, y = par_cal)) + 
   facet_wrap(~site.name, ncol = 2, nrow = 4)
+```
+
+### Poster Summaries and plots
+
+```{r}
+pal <- c("#FFC20A", "#994F00", "#0C7BDC", "#40B0A6", "#E66100", "#5D3A9B", "#D35FB7", "#005AB5", "#D41159", "#454545")
+```
+
+#### Summarize
+
+Compute daily mean and min max
+```{r}
+## Temperature ##
+temp.daily <- temp.dat %>% 
+  filter(time >= as.POSIXct("2023-05-25 00:00:00"), time <= as.POSIXct("2023-08-27 00:00:00")) %>% 
+  mutate(date = as.Date(time)) %>% 
+  group_by(site_name, date) %>% 
+  summarize(avg_temp = mean(temp_c),
+            sd_temp = sd(temp_c),
+            min_temp = min(temp_c),
+            max_temp = max(temp_c)) %>% 
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"))
+
+temp.daily$site_name <- factor(temp.daily$site_name, levels = c("Ocras East", "Orcas West", "Picnic Cove", "Reef Net Bay", "Jackson Beach", "4th of July", "Westcott Bay", "Mitchell Bay"))
+
+## Salinity ##
+sal.daily <- cond.dat %>% 
+  filter(time >= as.POSIXct("2023-05-25 00:00:00"), time <= as.POSIXct("2023-08-27 00:00:00")) %>% 
+  mutate(date = as.Date(time)) %>% 
+  group_by(site_name, date) %>% 
+  summarize(avg_sal = mean(sal_ppt),
+            sd_sal = sd(sal_ppt),
+            min_sal = min(sal_ppt),
+            max_sal = max(sal_ppt)) %>% 
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"))
+
+sal.daily$site_name <- factor(sal.daily$site_name, levels = c("Ocras East", "Orcas West", "Picnic Cove", "Reef Net Bay", "Jackson Beach", "4th of July", "Westcott Bay", "Mitchell Bay"))
+
+## PAR ##
+par.daily <- par.dat %>% 
+  filter(time >= as.POSIXct("2023-05-25 00:00:00"), time <= as.POSIXct("2023-08-27 00:00:00")) %>% 
+  mutate(date = as.Date(time)) %>%
+  mutate(tod = strftime(time, format="%H:%M:%S")) %>%
+  mutate(tod = as.POSIXct(tod, format="%H:%M:%S")) %>% 
+  filter(tod >= as.POSIXct("06:00:00", format="%H:%M:%S"), time <= as.POSIXct("21:00:00" , format="%H:%M:%S")) %>%
+  group_by(site_name, date) %>% 
+  summarize(avg_par = mean(par_cal),
+            sd_par = sd(par_cal),
+            min_par = min(par_cal),
+            max_par = max(par_cal)) %>% 
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"))
+
+par.daily$site_name <- factor(sal.daily$site_name, levels = c("Ocras East", "Orcas West", "Picnic Cove", "Reef Net Bay", "Jackson Beach", "4th of July", "Westcott Bay", "Mitchell Bay"))
+```
+
+#### Plot
+```{r}
+## Temperature ##
+png(filename = "../CERF poster figs/Temp_Site.png", width = 10, height = 14, units = "in", res = 300)
+ggplot(temp.daily) +
+  geom_point(aes(x = date, y = avg_temp, color = site_name)) +
+  scale_color_manual(values = pal) +
+  scale_x_datetime(date_labels = "%b", limits = c(as.POSIXct("2023-05-25 00:00:00"), as.POSIXct("2023-09-01 00:00:000"))) +
+  scale_y_continuous(limits = c(8, 18), breaks = seq(8, 18, by = 2)) +
+  ylab("Daily mean temperature (°C)") +
+  xlab("Date") +
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 26)) +
+  facet_wrap(~ site_name, ncol = 2, nrow = 4, scales = "free")
+dev.off()
+
+## Salinity ##
+png(filename = "../CERF poster figs/Sal_Site.png", width = 10, height = 14, units = "in", res = 300)
+ggplot(sal.daily) +
+  geom_point(aes(x = date, y = avg_sal, color = site_name)) +
+  scale_color_manual(values = pal) +
+  scale_x_datetime(date_labels = "%b", limits = c(as.POSIXct("2023-05-25 00:00:00"), as.POSIXct("2023-09-01 00:00:000"))) +
+  scale_y_continuous(limits = c(24, 36), breaks = seq(24, 36, by = 2)) +
+  ylab("Daily mean salinity (ppt)") +
+  xlab("Date") +
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 26)) +
+  facet_wrap(~ site_name, ncol = 2, nrow = 4, scales = "free")
+dev.off()
+
+## PAR ##
+png(filename = "../CERF poster figs/PAR_Site.png", width = 10, height = 14, units = "in", res = 300)
+ggplot(par.daily) +
+  geom_point(aes(x = date, y = avg_par, color = site_name)) +
+  scale_color_manual(values = pal) +
+  scale_x_datetime(date_labels = "%b", limits = c(as.POSIXct("2023-05-25 00:00:00"), as.POSIXct("2023-09-01 00:00:000"))) +
+  #scale_y_continuous(limits = c(24, 36), breaks = seq(24, 36, by = 2)) +
+  ylab("Daily mean salinity (ppt)") +
+  xlab("Date") +
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 26)) +
+  facet_wrap(~ site_name, ncol = 2, nrow = 4, scales = "free")
 ```
 
