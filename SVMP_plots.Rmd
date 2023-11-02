@@ -1,0 +1,126 @@
+---
+title: "SVMP_plots"
+author: "Wendel Raymond"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+## Library ##
+library(tidyverse)
+
+theme_set(theme_classic())
+```
+
+## Plotting SVMP data
+
+### Data
+```{r}
+site_results <- read.csv("../converted_site_results_2023_09_20.csv") %>%
+			select(., site_samp_id, veg_code, study_code, site_code, year,
+				dep_ins, nativesg, n_tran, fraction, samp_ha, veg_ha, veg_ha_se,
+				min_tran_n, mean_min_veg_edge_m, min_veg_edge_se_m, max_tran_n, 
+				mean_max_veg_edge_m, max_veg_se_m)
+
+site_samples <- read.csv("../site_samples_2023_09_20.csv") %>%
+			select(., site_samp_id, samp_sel, samp_repeat, samp_plan_type, 
+				repeat_site_samp_id, samp_status,  site_visit_id)
+
+alldata1 <- merge(site_samples,site_results, by = 'site_samp_id') %>%
+			subset(., !samp_sel == 'SUBJ_SRS')
+```
+
+#### Data managment
+```{r}
+# remove IslandCoMRC and remove exception data from the site plots / site regression data
+# select columns of interest (note that study code is ot part of that)
+alldata2 <- subset(alldata1, !study_code == 'IslandCoMRC' & !samp_status == 'exception')
+alldata3 <- select(alldata2, 'site_samp_id', 'site_code', 'year', 'samp_sel', 'samp_repeat', 'samp_plan_type', 'repeat_site_samp_id', 'n_tran', 'fraction', 'samp_ha', 'veg_ha', 'veg_ha_se')
+
+#select all repeat samples
+repeatdata1 <- subset(alldata3, !is.na(repeat_site_samp_id))
+repeatdata1$repeat_select <- repeatdata1$repeat_site_samp_id
+
+repeatdatalist <- select(repeatdata1, repeat_site_samp_id)
+colnames(repeatdatalist) <- 'site_samp_id'
+
+repeatdata2 <- merge(alldata3, repeatdatalist, by = 'site_samp_id')
+repeatdata2$repeat_select <- repeatdata2$site_samp_id
+
+repeatdata3 <- rbind(repeatdata1 , repeatdata2)
+repeatdata4 <- distinct(repeatdata3)
+head(repeatdata4,20)
+
+#select all samples that do not have a repeat
+uniquedata1 <- subset(alldata3, is.na(repeat_site_samp_id))
+uniquedata2 <- subset(uniquedata1, !samp_repeat == 'repeat')
+uniquedata3 <- subset(uniquedata2, samp_plan_type == 'planned')
+uniquedata4 <- distinct(uniquedata3)
+head(uniquedata4,20)
+```
+
+### Summaries
+```{r}
+#long-term
+df1 <- alldata3 %>% 
+   group_by(site_code) %>%
+   summarise(SEmean = mean(veg_ha_se), length=n_distinct(year))
+write.csv(df1, 'length_long.csv')
+
+df2 <-subset(df1,!SEmean==0)
+df3 <-subset(df1,SEmean==0)
+df4 <- subset(df2, length > 1)
+
+#short-term
+df1a <- alldata3 %>% 
+	subset(., year > 2014) %>%
+	group_by(site_code) %>%
+  	summarise(SEmean = mean(veg_ha_se),length=n_distinct(year))
+#write.csv(df1a, 'length_short.csv')
+
+df2a <-subset(df1a,!SEmean==0)
+df4a <- subset(df2a, length > 1)
+
+# note that df2 is all sites with native seagrass, df3 is all sites without native seagrass,
+# df4 is all sites with grass sampled more than 1 years (for plotting)
+
+# info for plotting 
+df5 <- merge(df4,uniquedata4,by=c("site_code"))
+df5$repeat_select <- 'no repeat'
+df5$color_select <- 'new'
+
+df6 <- merge(df4,repeatdata4,by=c("site_code"))
+df6$color_select <- 'repeat'
+df7 <- rbind(df5, df6)
+head(df7, 20)
+
+df8 <- read.csv('data/input/3year_rotating_panel.csv')
+df9 <- merge(df7, df8, by = 'site_code')
+
+
+## Filter and append names ##
+sji.dat <-  %>% 
+  filter(site_code %in% c("outf458", "outf456", "core002", "flats64", "sjs0138", "flats53", "flats55", "flats66", "flats61"))
+```
+
+### Plots
+
+```{r}
+ggplot(alldata3 %>% 
+         filter(site_code %in% c())) +
+ geom_point(aes(x=year , y=veg_ha, color=color_select, group = repeat_select, shape = samp_sel), size=2, alpha = 0.7) +
+ scale_color_manual(values = c("steelblue", "black")) +
+ geom_errorbar(aes(ymin = veg_ha - veg_ha_se, ymax = veg_ha+ veg_ha_se), width = 0, alpha = 0.7) +
+ geom_line(data = subset(groupA_data, !color_select == 'new'), 
+ mapping = aes(x=year, y=veg_ha, group=repeat_select, color = color_select), 
+              linetype= 'dashed', size = 0.5)+
+ xlab("")+
+
+ scale_x_continuous(breaks = seq(2000,2022,5), limits = c(2000,2022))+
+ ylab("Estimated eelgrass area (ha)")+
+ facet_wrap(.~site_code, scales = "free_y", ncol = 2)+
+ labs(shape = 'transect type', color = 'sample type')+
+ theme_bw()
+```
+
