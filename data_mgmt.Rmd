@@ -225,7 +225,7 @@ Calibrate and correct data as needed.
 Use calibration coefficients to correct raw data
 ```{r}
 par.dat <- left_join(par.dat, par.coefs[, 3:4], by = "sensor_sn") %>%
-  mutate(estimate = if_else(is.na(estimate), 1, estimate), # If a sensor has no calibration event, use 1 as coefficient
+  mutate(estimate = if_else(is.na(estimate), 1, estimate),
          calib = par_uncal * estimate,
          par_cal = par_uncal * estimate * 900 * 0.000001)
 ```
