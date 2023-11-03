@@ -58,6 +58,12 @@ uniquedata2 <- subset(uniquedata1, !samp_repeat == 'repeat')
 uniquedata3 <- subset(uniquedata2, samp_plan_type == 'planned')
 uniquedata4 <- distinct(uniquedata3)
 head(uniquedata4,20)
+
+## SJI poster sites ##
+SJI.poster <- data.frame(
+  site_code = c("outf458", "outf456", "core002", "flats64", "sjs0138", "flats53", "flats55", "flats66", "flats61"),
+  site_name = c("Orcas East", "Orcas West", "Picnic Cove", "Reef Net Bay", "Jackson Beach", "Westcott Bay", "Mitchell Bay", "Shallow Bay", "Shoal Bay")
+)
 ```
 
 ### Summaries
@@ -66,7 +72,6 @@ head(uniquedata4,20)
 df1 <- alldata3 %>% 
    group_by(site_code) %>%
    summarise(SEmean = mean(veg_ha_se), length=n_distinct(year))
-write.csv(df1, 'length_long.csv')
 
 df2 <-subset(df1,!SEmean==0)
 df3 <-subset(df1,SEmean==0)
@@ -77,13 +82,9 @@ df1a <- alldata3 %>%
 	subset(., year > 2014) %>%
 	group_by(site_code) %>%
   	summarise(SEmean = mean(veg_ha_se),length=n_distinct(year))
-#write.csv(df1a, 'length_short.csv')
 
 df2a <-subset(df1a,!SEmean==0)
 df4a <- subset(df2a, length > 1)
-
-# note that df2 is all sites with native seagrass, df3 is all sites without native seagrass,
-# df4 is all sites with grass sampled more than 1 years (for plotting)
 
 # info for plotting 
 df5 <- merge(df4,uniquedata4,by=c("site_code"))
@@ -94,33 +95,32 @@ df6 <- merge(df4,repeatdata4,by=c("site_code"))
 df6$color_select <- 'repeat'
 df7 <- rbind(df5, df6)
 head(df7, 20)
-
-df8 <- read.csv('data/input/3year_rotating_panel.csv')
-df9 <- merge(df7, df8, by = 'site_code')
-
-
-## Filter and append names ##
-sji.dat <-  %>% 
-  filter(site_code %in% c("outf458", "outf456", "core002", "flats64", "sjs0138", "flats53", "flats55", "flats66", "flats61"))
 ```
 
 ### Plots
 
 ```{r}
-ggplot(alldata3 %>% 
-         filter(site_code %in% c())) +
- geom_point(aes(x=year , y=veg_ha, color=color_select, group = repeat_select, shape = samp_sel), size=2, alpha = 0.7) +
- scale_color_manual(values = c("steelblue", "black")) +
- geom_errorbar(aes(ymin = veg_ha - veg_ha_se, ymax = veg_ha+ veg_ha_se), width = 0, alpha = 0.7) +
- geom_line(data = subset(groupA_data, !color_select == 'new'), 
- mapping = aes(x=year, y=veg_ha, group=repeat_select, color = color_select), 
-              linetype= 'dashed', size = 0.5)+
- xlab("")+
+sji.dat <- df7 %>% 
+  filter(site_code %in% unique(SJI.poster$site_code))
 
- scale_x_continuous(breaks = seq(2000,2022,5), limits = c(2000,2022))+
+sji.dat <- left_join(sji.dat, SJI.poster)
+sji.dat$site_name <- factor(sji.dat$site_name, levels = c("Orcas East", "Orcas West", "Picnic Cove", "Reef Net Bay", "Jackson Beach", "Westcott Bay", "Mitchell Bay", "Shallow Bay", "Shoal Bay"))
+
+pal <- c("#FFC20A", "#994F00", "#0C7BDC", "#40B0A6", "#E66100", "#D35FB7", "#005AB5", "#D41159", "#454545")
+
+png(filename = "../CERF poster figs/SVMP_Eelgrass.png", width = 10, height = 17.5, units = "in", res = 300)
+ggplot(sji.dat) +
+ geom_errorbar(aes(x = year, ymin = veg_ha - veg_ha_se, ymax = veg_ha+ veg_ha_se), width = 0, alpha = 0.7) +
+  geom_point(aes(x = year , y = veg_ha, color = site_name, group = repeat_select, shape = color_select), size = 4, alpha = 0.7) +
+ scale_color_manual(values = pal) +
+ geom_line(data = subset(sji.dat, !color_select == 'new'), mapping = aes(x = year, y = veg_ha, group = repeat_select), linetype = 'dashed', linewidth = 0.5) +
+ xlab("Year") +
+ scale_x_continuous(breaks = seq(2000, 2022, 5), limits = c(2000,2022)) +
  ylab("Estimated eelgrass area (ha)")+
- facet_wrap(.~site_code, scales = "free_y", ncol = 2)+
- labs(shape = 'transect type', color = 'sample type')+
- theme_bw()
+ facet_wrap(.~site_name, scales = "free", ncol = 2, nrow = 5) +
+ labs(shape = 'transect type', color = 'sample type') +
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 26))
+dev.off()
 ```
 
